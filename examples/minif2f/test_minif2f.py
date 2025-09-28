@@ -1,230 +1,297 @@
 #!/usr/bin/env python3
 """
-Test the MiniF2F example implementation.
+Test MiniF2F with LLM sampling using the verifiers framework.
+This script uses GPT-4o to generate proof attempts and verifies them.
 """
 
+import os
 import sys
+import json
 import tempfile
-import shutil
 from pathlib import Path
+from typing import List, Dict, Any
+from dotenv import load_dotenv
 
 # Add src to path for testing
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from minif2f import (
-    MiniF2FEnvironment,
-    compile_minif2f_theorem,
-    get_minif2f_stats,
-    get_theorem_list,
-    extract_theorem_header,
-    extract_theorem_proof_body,
-    setup_minif2f,
-)
+# Import verifiers and related modules
+try:
+    import verifiers as vf
+    from openai import OpenAI
+    VERIFIERS_AVAILABLE = True
+except ImportError as e:
+    print(f"Error importing required modules: {e}")
+    print("Please install: pip install verifiers openai python-dotenv")
+    sys.exit(1)
 
-
-def test_minif2f_environment():
-    """Test MiniF2F environment management."""
-    print("Testing MiniF2F environment...")
-
-    test_path = Path("/tmp/test_minif2f_env")
-    env = MiniF2FEnvironment(test_path)
-
-    # Test initial state
-    assert not env.is_setup()
-    print("  ✓ Initial state detection works")
-
-    # Test paths
-    assert env.base_path == test_path
-    assert env.lean_path == test_path / "lean"
-    assert env.src_path == test_path / "lean" / "src"
-    print("  ✓ Path structure correct")
-
-    # Cleanup
-    import shutil
-    shutil.rmtree(test_path, ignore_errors=True)
-    print("  ✓ MiniF2F environment tests passed")
-
-
-def test_theorem_extraction():
-    """Test theorem extraction functionality."""
-    print("\nTesting theorem extraction...")
-
-    # Create a mock theorem file
-    mock_content = """
-import data.real.basic
-
-theorem test_theorem (x : ℝ) : x + 0 = x :=
-by simp
-
-theorem another_theorem : 1 + 1 = 2 :=
-by norm_num
-
-lemma helper_lemma : true :=
-trivial
-"""
-
-    # Test theorem list extraction (would need actual file)
-    # This is a simplified test
-    import re
-    theorem_pattern = r"theorem\s+([a-zA-Z_][a-zA-Z0-9_]*)"
-    theorems = re.findall(theorem_pattern, mock_content)
-
-    assert "test_theorem" in theorems
-    assert "another_theorem" in theorems
-    print(f"  Found theorems: {theorems}")
-
-    # Test proof body extraction
-    test_proofs = [
-        "begin simp end",
-        "by simp",
-        "by norm_num",
-        "exact rfl",
-        "simp",
-    ]
-    
-    for proof in test_proofs:
-        extracted = extract_theorem_proof_body(proof)
-        assert extracted is not None
-        print(f"  Extracted proof '{proof}' -> '{extracted}'")
-
-    print("  ✓ Theorem extraction tests passed")
-
-
-def test_compilation_interface():
-    """Test the compilation interface (mock)."""
-    print("\nTesting compilation interface...")
-
-    # This would require actual MiniF2F setup, so we'll do a mock test
-    # In practice, you'd set up a test MiniF2F environment
-
-    # Test error handling for missing environment
-    result = compile_minif2f_theorem(
-        theorem_content="begin simp end",
-        theorem_name="nonexistent",
-        split="test",
-        minif2f_path="/nonexistent/path"
+# Import the verifiers MiniF2F module
+try:
+    # Add parent directory to path to find verifiers_minif2f
+    sys.path.insert(0, str(Path(__file__).parent.parent / "verifiers_minif2f"))
+    from minif2f_verifiers import (
+        load_environment,
+        MiniF2FParser,
+        compile_proof,
+        VERIFIERS_AVAILABLE as VF_MODULE_AVAILABLE
     )
-
-    assert not result["success"]
-    assert "not set up" in result["error"]
-    print("  ✓ Error handling for missing environment works")
-
-    # Test stats for missing environment
-    stats = get_minif2f_stats("/nonexistent/path")
-    assert not stats["setup"]
-    print("  ✓ Stats for missing environment works")
-
-    print("  ✓ Compilation interface tests passed")
+except ImportError as e:
+    print(f"Could not import verifiers_minif2f module: {e}")
+    print("Make sure the verifiers_minif2f module is in the parent directory")
+    sys.exit(1)
 
 
-def test_compatibility_interface():
-    """Test compatibility with original lean_compile function."""
-    print("\nTesting compatibility interface...")
-
-    # Import the compatibility function
-    from minif2f import lean_compile
-
-    # Test the wrapper
-    result = lean_compile(
-        theorem_content="begin simp end",
-        theorem_name="test",
-        split="test",
-        data_path="/nonexistent"
-    )
-
-    # Should return the same format as the new function
-    assert "success" in result
-    assert not result["success"]  # Should fail for nonexistent path
-    print("  ✓ Compatibility wrapper works")
-
-    print("  ✓ Compatibility interface tests passed")
-
-
-def test_real_minif2f_setup():
-    """Test real MiniF2F setup (optional - requires internet)."""
-    print("\nTesting real MiniF2F setup...")
+def load_api_key():
+    """Load OpenAI API key from ~/.env file."""
+    env_path = Path.home() / ".env"
+    if env_path.exists():
+        load_dotenv(env_path)
+        api_key = os.getenv("OPENAI_API_KEY")
+        if api_key:
+            print("✓ Loaded OpenAI API key from ~/.env")
+            return api_key
     
-    # Use a temporary directory for testing
+    print("✗ No OpenAI API key found in ~/.env")
+    print("  Please add OPENAI_API_KEY=your-key to ~/.env")
+    return None
+
+
+def test_llm_proof_generation():
+    """Test LLM proof generation using GPT-4o with the verifiers framework."""
+    print("\n" + "=" * 60)
+    print("Testing LLM Proof Generation with GPT-4o")
+    print("=" * 60)
+    
+    # Load API key
+    api_key = load_api_key()
+    if not api_key:
+        print("Skipping LLM tests - no API key available")
+        return False
+    
+    # Set up OpenAI client
+    client = OpenAI(api_key=api_key)
+    
+    # Create a temporary directory for MiniF2F data
     with tempfile.TemporaryDirectory() as temp_dir:
-        test_path = Path(temp_dir) / "test_minif2f"
+        minif2f_path = Path(temp_dir) / "minif2f"
+        
+        print(f"\n1. Loading MiniF2F environment...")
+        print(f"   Path: {minif2f_path}")
         
         try:
-            print(f"  Setting up MiniF2F in {test_path}")
-            success = setup_minif2f(test_path)
+            # Load the MiniF2F environment using verifiers
+            env = load_environment(
+                languages=["lean"],  # Focus on Lean for this test
+                num_eval_examples=3,  # Small number for testing
+                data_path=str(minif2f_path),
+                system_prompt="You are an expert Lean theorem prover. Generate correct Lean proofs for the given theorems."
+            )
             
-            if success:
-                print("  ✓ MiniF2F setup succeeded")
-                
-                # Test getting theorem lists
-                valid_theorems = get_theorem_list("valid", test_path)
-                test_theorems = get_theorem_list("test", test_path)
-                
-                print(f"  Found {len(valid_theorems)} valid theorems")
-                print(f"  Found {len(test_theorems)} test theorems")
-                
-                if valid_theorems:
-                    # Test extracting a theorem header
-                    first_theorem = valid_theorems[0]
-                    header = extract_theorem_header(first_theorem, "valid", test_path)
-                    if header:
-                        print(f"  ✓ Successfully extracted header for {first_theorem}")
-                    else:
-                        print(f"  ⚠ Could not extract header for {first_theorem}")
-                
-                # Test stats
-                stats = get_minif2f_stats(test_path)
-                print(f"  Stats: {stats}")
-                
-                print("  ✓ Real MiniF2F tests passed")
-            else:
-                print("  ⚠ MiniF2F setup failed (this is okay if no internet/git)")
-                
+            print(f"   ✓ Environment loaded with {len(env.eval_dataset)} eval examples")
+            
         except Exception as e:
-            print(f"  ⚠ Real MiniF2F test failed: {e} (this is okay if no internet/git)")
+            print(f"   ✗ Failed to load environment: {e}")
+            return False
+        
+        print("\n2. Sampling proofs from GPT-4o...")
+        
+        # Test with a few examples
+        results = []
+        for i, example in enumerate(env.eval_dataset.select(range(min(3, len(env.eval_dataset))))):
+            print(f"\n   Example {i+1}:")
+            print(f"   Theorem: {example['info']['name']}")
+            
+            # Get the prompt
+            prompt = example['question']
+            
+            # Sample from GPT-4o
+            try:
+                response = client.chat.completions.create(
+                    model="gpt-4o",
+                    messages=[
+                        {"role": "system", "content": env.system_prompt},
+                        {"role": "user", "content": prompt}
+                    ],
+                    temperature=0.7,
+                    max_tokens=500
+                )
+                
+                completion = response.choices[0].message.content
+                print(f"   Generated proof attempt (truncated): {completion[:100]}...")
+                
+                # Parse the proof using the MiniF2F parser
+                parser = env.parser
+                parsed_proof = parser.parse_answer(completion)
+                
+                if parsed_proof:
+                    print(f"   ✓ Successfully parsed proof from response")
+                    
+                    # Verify the proof using compilation
+                    print(f"   Compiling proof...")
+                    compiler_output = compile_proof(
+                        language="lean",
+                        proof=parsed_proof,
+                        info=example['info'],
+                        data_path=str(minif2f_path)
+                    )
+                    
+                    if compiler_output.returncode == 0:
+                        print(f"   ✓ Proof compiled successfully!")
+                        results.append({
+                            "theorem": example['info']['name'],
+                            "success": True,
+                            "proof": parsed_proof
+                        })
+                    else:
+                        print(f"   ✗ Compilation failed")
+                        print(f"     Error: {compiler_output.stderr[:200] if compiler_output.stderr else 'Unknown error'}")
+                        results.append({
+                            "theorem": example['info']['name'],
+                            "success": False,
+                            "error": "Compilation failed"
+                        })
+                else:
+                    print(f"   ✗ Could not parse proof from LLM response")
+                    results.append({
+                        "theorem": example['info']['name'],
+                        "success": False,
+                        "error": "Parse failed"
+                    })
+                    
+            except Exception as e:
+                print(f"   ✗ Error during sampling: {e}")
+                results.append({
+                    "theorem": example['info']['name'] if 'info' in example else f"example_{i}",
+                    "success": False,
+                    "error": str(e)
+                })
+        
+        # Summary
+        print("\n" + "=" * 60)
+        print("Summary:")
+        print(f"Total theorems tested: {len(results)}")
+        print(f"Successful proofs: {sum(1 for r in results if r['success'])}")
+        print(f"Failed proofs: {sum(1 for r in results if not r['success'])}")
+        
+        for result in results:
+            status = "✓" if result['success'] else "✗"
+            print(f"  {status} {result['theorem']}")
+        
+        return len(results) > 0
 
 
-def test_simple_compilation():
-    """Test a simple theorem compilation (mock)."""
-    print("\nTesting simple compilation...")
+def test_verifiers_evaluation():
+    """Test the full verifiers evaluation pipeline."""
+    print("\n" + "=" * 60)
+    print("Testing Verifiers Evaluation Pipeline")
+    print("=" * 60)
     
-    # Test with a very simple theorem that should parse correctly
-    simple_proof_tests = [
-        ("by simp", "by tactic"),
-        ("begin simp end", "begin...end block"),
-        ("exact rfl", "exact proof"),
-        ("simp", "direct tactic"),
+    # Load API key
+    api_key = load_api_key()
+    if not api_key:
+        print("Skipping evaluation tests - no API key available")
+        return False
+    
+    # Set up OpenAI client
+    client = OpenAI(api_key=api_key)
+    
+    with tempfile.TemporaryDirectory() as temp_dir:
+        minif2f_path = Path(temp_dir) / "minif2f"
+        
+        print("\n1. Loading environment for evaluation...")
+        
+        try:
+            # Load environment with very small dataset for testing
+            env = load_environment(
+                languages=["lean"],
+                num_eval_examples=2,  # Very small for quick test
+                data_path=str(minif2f_path)
+            )
+            
+            print(f"   ✓ Environment loaded")
+            
+            # Run evaluation using verifiers framework
+            print("\n2. Running evaluation with GPT-4o...")
+            
+            results = env.evaluate(
+                client=client,
+                model="gpt-4o",
+                num_examples=2,
+                rollouts_per_example=1,
+                max_concurrent=1
+            )
+            
+            print(f"   ✓ Evaluation completed")
+            
+            # Display results
+            print("\n3. Results:")
+            if hasattr(results, 'rewards'):
+                avg_reward = sum(results.rewards) / len(results.rewards) if results.rewards else 0
+                print(f"   Average reward: {avg_reward:.2f}")
+            
+            # Create dataset from results
+            dataset = env.make_dataset(results)
+            print(f"   Generated dataset with {len(dataset)} examples")
+            
+            return True
+            
+        except Exception as e:
+            print(f"   ✗ Evaluation failed: {e}")
+            import traceback
+            traceback.print_exc()
+            return False
+
+
+def main():
+    """Run all LLM tests."""
+    print("MiniF2F LLM Testing Suite")
+    print("=" * 60)
+    
+    # Check if verifiers is available
+    if not VERIFIERS_AVAILABLE:
+        print("✗ Verifiers framework not available")
+        print("  Install with: pip install verifiers")
+        return 1
+    
+    if not VF_MODULE_AVAILABLE:
+        print("✗ Verifiers MiniF2F module not properly configured")
+        return 1
+    
+    print("✓ Verifiers framework is available")
+    print("✓ MiniF2F module is available")
+    
+    # Run tests
+    tests = [
+        ("LLM Proof Generation", test_llm_proof_generation),
+        ("Verifiers Evaluation", test_verifiers_evaluation)
     ]
     
-    for proof, description in simple_proof_tests:
-        extracted = extract_theorem_proof_body(proof)
-        assert extracted is not None, f"Failed to extract {description}"
-        print(f"  ✓ {description}: '{proof}' -> '{extracted}'")
+    results = []
+    for test_name, test_func in tests:
+        try:
+            success = test_func()
+            results.append((test_name, success))
+        except Exception as e:
+            print(f"\n✗ Test '{test_name}' failed with error: {e}")
+            import traceback
+            traceback.print_exc()
+            results.append((test_name, False))
     
-    print("  ✓ Simple compilation tests passed")
+    # Final summary
+    print("\n" + "=" * 60)
+    print("Final Test Summary:")
+    print("=" * 60)
+    
+    for test_name, success in results:
+        status = "✓ PASS" if success else "✗ FAIL"
+        print(f"{status}: {test_name}")
+    
+    total_passed = sum(1 for _, s in results if s)
+    print(f"\nTotal: {total_passed}/{len(results)} tests passed")
+    
+    return 0 if total_passed == len(results) else 1
 
 
 if __name__ == "__main__":
-    print("Running MiniF2F example tests...")
-    print("=" * 50)
-
-    try:
-        test_minif2f_environment()
-        test_theorem_extraction()
-        test_compilation_interface()
-        test_compatibility_interface()
-        test_simple_compilation()
-        
-        # Optional test that requires internet
-        try:
-            test_real_minif2f_setup()
-        except Exception as e:
-            print(f"  ⚠ Real MiniF2F test skipped: {e}")
-
-        print("\n" + "=" * 50)
-        print("All MiniF2F example tests passed! ✓")
-
-    except Exception as e:
-        print(f"\nMiniF2F test failed with error: {e}")
-        import traceback
-        traceback.print_exc()
-        sys.exit(1)
+    sys.exit(main())
