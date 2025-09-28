@@ -10,29 +10,29 @@ from pathlib import Path
 # Add src to path for testing
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
+from lean_bench.cache import (
+    compute_content_hash,
+    get_cache_stats,
+    get_cached_result,
+    store_cached_result,
+)
 from lean_bench.compiler import (
+    CompilerOutput,
     check_lean_installed,
     get_lean_version,
     parse_lean_diagnostics,
-    CompilerOutput
 )
 from lean_bench.project import (
-    setup_lean_project,
-    find_lean_files,
     extract_lean_definitions,
-    validate_lean_project
+    find_lean_files,
+    setup_lean_project,
+    validate_lean_project,
 )
 from lean_bench.storage import (
-    store_compilation_attempt,
-    retrieve_attempt,
+    get_storage_stats,
     query_attempts,
-    get_storage_stats
-)
-from lean_bench.cache import (
-    compute_content_hash,
-    get_cached_result,
-    store_cached_result,
-    get_cache_stats
+    retrieve_attempt,
+    store_compilation_attempt,
 )
 
 

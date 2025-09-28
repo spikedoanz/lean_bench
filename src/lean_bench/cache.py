@@ -54,7 +54,7 @@ def get_cached_result(
         return None
 
     try:
-        with open(cache_file, "r", encoding="utf-8") as f:
+        with open(cache_file, encoding="utf-8") as f:
             cached_data = json.load(f)
 
         # Check TTL if specified
@@ -162,7 +162,7 @@ def cleanup_expired_cache(cache_dir: str | Path = "~/.lean-bench/cache") -> int:
 
     for cache_file in cache_path.glob("*.json"):
         try:
-            with open(cache_file, "r", encoding="utf-8") as f:
+            with open(cache_file, encoding="utf-8") as f:
                 cache_data = json.load(f)
 
             if "expires_at" in cache_data and current_time > cache_data["expires_at"]:
@@ -206,7 +206,7 @@ def get_cache_stats(cache_dir: str | Path = "~/.lean-bench/cache") -> dict[str, 
         total_size += cache_file.stat().st_size
 
         try:
-            with open(cache_file, "r", encoding="utf-8") as f:
+            with open(cache_file, encoding="utf-8") as f:
                 cache_data = json.load(f)
 
             if "expires_at" in cache_data and current_time > cache_data["expires_at"]:

@@ -8,7 +8,6 @@ structured results.
 
 import re
 import subprocess
-import tempfile
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path

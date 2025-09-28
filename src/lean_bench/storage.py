@@ -85,7 +85,7 @@ def retrieve_attempt(
         # Look for files containing the attempt_id
         for attempt_file in date_dir.glob(f"*_{attempt_id}.json"):
             try:
-                with open(attempt_file, "r", encoding="utf-8") as f:
+                with open(attempt_file, encoding="utf-8") as f:
                     return json.load(f)
             except Exception:
                 continue
@@ -132,7 +132,7 @@ def query_attempts(
             break
 
         try:
-            with open(attempt_file, "r", encoding="utf-8") as f:
+            with open(attempt_file, encoding="utf-8") as f:
                 attempt_data = json.load(f)
 
             # Apply filters
@@ -252,7 +252,7 @@ def get_storage_stats(
 
             # Check if attempt was successful
             try:
-                with open(attempt_file, "r", encoding="utf-8") as f:
+                with open(attempt_file, encoding="utf-8") as f:
                     attempt_data = json.load(f)
                     if attempt_data.get("output", {}).get("returncode") == 0:
                         successful_attempts += 1

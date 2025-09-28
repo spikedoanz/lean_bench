@@ -10,32 +10,31 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, HTTPException, BackgroundTasks
+from fastapi import BackgroundTasks, FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
+from .cache import (
+    cache_compilation_result,
+    get_cache_stats,
+    store_cached_result,
+)
 from .compiler import (
-    CompilerOutput,
+    check_lean_installed,
     compile_lean_content,
     compile_lean_file,
-    check_lean_installed,
     get_lean_version,
 )
 from .project import (
-    setup_lean_project,
-    find_lean_files,
     extract_lean_definitions,
+    find_lean_files,
+    setup_lean_project,
     validate_lean_project,
 )
 from .storage import (
-    store_compilation_attempt,
-    retrieve_attempt,
-    query_attempts,
     get_storage_stats,
-)
-from .cache import (
-    cache_compilation_result,
-    store_cached_result,
-    get_cache_stats,
+    query_attempts,
+    retrieve_attempt,
+    store_compilation_attempt,
 )
 
 
@@ -220,7 +219,7 @@ async def compile_content(request: CompileContentRequest):
         )
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Compilation failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Compilation failed: {e!s}")
 
 
 @app.post("/compile/file", response_model=CompileResponse)
@@ -273,7 +272,7 @@ async def compile_file(request: CompileFileRequest):
         )
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Compilation failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Compilation failed: {e!s}")
 
 
 @app.post("/project/setup", response_model=ProjectResponse)
@@ -302,7 +301,7 @@ async def setup_project(request: SetupProjectRequest):
         )
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Project setup failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Project setup failed: {e!s}")
 
 
 @app.get("/project/{project_path:path}/files")
@@ -322,7 +321,7 @@ async def list_project_files(project_path: str, pattern: str = "**/*.lean"):
         }
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to list files: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to list files: {e!s}")
 
 
 @app.get("/project/{project_path:path}/definitions")
@@ -353,7 +352,7 @@ async def extract_project_definitions(project_path: str, file_pattern: str = "**
         }
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to extract definitions: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to extract definitions: {e!s}")
 
 
 @app.post("/compile/batch", response_model=BatchCompileResponse)
