@@ -22,6 +22,18 @@ from lean_bench.project import (
     extract_lean_definitions,
     validate_lean_project
 )
+from lean_bench.storage import (
+    store_compilation_attempt,
+    retrieve_attempt,
+    query_attempts,
+    get_storage_stats
+)
+from lean_bench.cache import (
+    compute_content_hash,
+    get_cached_result,
+    store_cached_result,
+    get_cache_stats
+)
 
 
 def test_lean_installation():
@@ -135,6 +147,125 @@ def test_compiler_output():
     print("  ✓ Timeout case works")
 
 
+def test_storage_system():
+    """Test storage and retrieval of compilation attempts."""
+    print("\nTesting storage system...")
+
+    # Test storing an attempt
+    input_data = {
+        "content": "def test : String := \"hello\"",
+        "file_name": "test.lean"
+    }
+    output_data = {
+        "returncode": 0,
+        "stdout": "compiled successfully",
+        "stderr": ""
+    }
+    metadata = {
+        "benchmark": "test",
+        "session_id": "test_session"
+    }
+
+    attempt_id = store_compilation_attempt(
+        input_data,
+        output_data,
+        metadata,
+        storage_dir="/tmp/test_storage"
+    )
+    print(f"  Stored attempt with ID: {attempt_id}")
+
+    # Test retrieving the attempt
+    retrieved = retrieve_attempt(attempt_id, storage_dir="/tmp/test_storage")
+    assert retrieved is not None
+    assert retrieved["attempt_id"] == attempt_id
+    assert retrieved["input"] == input_data
+    assert retrieved["output"] == output_data
+    print("  ✓ Successfully stored and retrieved attempt")
+
+    # Test querying attempts
+    attempts = query_attempts(
+        filters={"metadata.benchmark": "test"},
+        storage_dir="/tmp/test_storage"
+    )
+    assert len(attempts) >= 1
+    print(f"  Found {len(attempts)} attempts with filter")
+
+    # Test storage stats
+    stats = get_storage_stats(storage_dir="/tmp/test_storage")
+    assert stats["total_attempts"] >= 1
+    print(f"  Storage stats: {stats}")
+
+    # Cleanup
+    import shutil
+    shutil.rmtree("/tmp/test_storage", ignore_errors=True)
+    print("  ✓ Storage system tests passed")
+
+
+def test_cache_system():
+    """Test caching functionality."""
+    print("\nTesting cache system...")
+
+    # Test hash computation
+    hash1 = compute_content_hash("test content", "test.lean")
+    hash2 = compute_content_hash("test content", "test.lean")
+    hash3 = compute_content_hash("different content", "test.lean")
+
+    assert hash1 == hash2  # Same inputs should give same hash
+    assert hash1 != hash3  # Different inputs should give different hash
+    print("  ✓ Hash computation works correctly")
+
+    # Test caching
+    cache_key = "test_cache_key"
+    result_data = {
+        "returncode": 0,
+        "stdout": "cached result",
+        "duration_ms": 100
+    }
+
+    # Store in cache
+    store_cached_result(
+        cache_key,
+        result_data,
+        cache_dir="/tmp/test_cache"
+    )
+
+    # Retrieve from cache
+    cached = get_cached_result(cache_key, cache_dir="/tmp/test_cache")
+    assert cached is not None
+    assert cached["stdout"] == "cached result"
+    assert cached["cached"] == True  # Should be marked as cache hit
+    print("  ✓ Successfully stored and retrieved from cache")
+
+    # Test cache stats
+    stats = get_cache_stats(cache_dir="/tmp/test_cache")
+    assert stats["total_entries"] >= 1
+    print(f"  Cache stats: {stats}")
+
+    # Test TTL caching
+    store_cached_result(
+        "ttl_test",
+        {"test": "data"},
+        ttl_seconds=1,  # Very short TTL
+        cache_dir="/tmp/test_cache"
+    )
+
+    # Should be available immediately
+    cached_ttl = get_cached_result("ttl_test", cache_dir="/tmp/test_cache")
+    assert cached_ttl is not None
+
+    # Wait and check expiration (quick test - sleep for 1.1 seconds)
+    import time
+    time.sleep(1.1)
+    expired = get_cached_result("ttl_test", cache_dir="/tmp/test_cache")
+    assert expired is None  # Should be expired and removed
+    print("  ✓ TTL expiration works correctly")
+
+    # Cleanup
+    import shutil
+    shutil.rmtree("/tmp/test_cache", ignore_errors=True)
+    print("  ✓ Cache system tests passed")
+
+
 if __name__ == "__main__":
     print("Running development tests for Lean Bench SDK...")
     print("=" * 50)
@@ -144,6 +275,8 @@ if __name__ == "__main__":
         test_diagnostic_parsing()
         test_project_setup()
         test_compiler_output()
+        test_storage_system()
+        test_cache_system()
 
         print("\n" + "=" * 50)
         print("All development tests passed! ✓")
