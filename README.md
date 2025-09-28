@@ -104,6 +104,30 @@ result = compile_minif2f_theorem(
 )
 ```
 
+### MiniF2F Verifiers Module
+
+The `examples/verifiers_minif2f/` directory provides a complete verifiers framework integration:
+
+```python
+from examples.verifiers_minif2f import load_environment
+
+# Load MiniF2F environment with multiple languages
+env = load_environment(languages=["lean", "isabelle", "hollight"])
+
+# Evaluate model responses
+score = env.rubric.evaluate(
+    env.parser,
+    "```lean\nby simp\n```",
+    info=env.eval_dataset[0]["info"]
+)
+```
+
+Features:
+- **Multi-language support**: Lean, Isabelle, HOL Light, Metamath
+- **Verifiers framework compatibility**: Drop-in replacement for verifiers environments
+- **lean-bench SDK integration**: Enhanced Lean compilation using the core SDK
+- **Automatic setup**: Downloads MiniF2F data and manages dependencies
+
 ### Custom Benchmarks
 
 Create your own benchmark by:
