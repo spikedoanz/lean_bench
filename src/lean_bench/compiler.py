@@ -199,7 +199,7 @@ def compile_lean_content(
 
     # Create unique filename to avoid conflicts
     unique_name = f"{uuid.uuid4().hex}_{file_name}".replace("-", "_")
-    temp_file = project_root / unique_name
+    temp_file = Path(project_root) / unique_name
 
     try:
         # Write content to temporary file
