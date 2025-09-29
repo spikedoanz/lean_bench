@@ -75,7 +75,12 @@ def get_cached_result(
 
     except Exception:
         # If there's any error reading the cache, treat as cache miss
-        cache_file.unlink(missing_ok=True)
+        # But only try to unlink if it's a file, not a directory
+        if cache_file.is_file():
+            try:
+                cache_file.unlink(missing_ok=True)
+            except Exception:
+                pass  # Best effort cleanup
         return None
 
 
