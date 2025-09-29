@@ -372,11 +372,7 @@ def test_project_compiler_integration():
         success = setup_lean_project(project_path, mathlib=False)
         assert success
         
-        # Validate project
-        validation = validate_lean_project(project_path)
-        assert validation["valid"]
-        
-        # Create test file
+        # Create test file first (before validation)
         test_file = project_path / "src" / "integration_test.lean"
         test_content = """
 def hello : String := "world"
@@ -384,6 +380,10 @@ def add (x y : Nat) : Nat := x + y
 theorem add_comm (x y : Nat) : add x y = add y x := by simp [add]
 """
         test_file.write_text(test_content)
+        
+        # Now validate project (after creating a .lean file)
+        validation = validate_lean_project(project_path)
+        assert validation["valid"], f"Project validation failed: {validation}"
         
         # Find and compile the file
         files = find_lean_files(project_path)
