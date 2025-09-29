@@ -153,6 +153,12 @@ def test_cache_edge_cases():
         result = get_cached_result("fake_cache", cache_dir=cache_dir)
         assert result is None
         print(f"  Directory as cache file: handled gracefully")
+        # Clean up the directory (may fail on some systems due to permissions)
+        try:
+            import shutil
+            shutil.rmtree(fake_cache)
+        except Exception:
+            pass  # Best effort cleanup
         
         # Test with read-only cache directory
         if os.name != 'nt':  # Skip on Windows
